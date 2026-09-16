@@ -1,0 +1,18 @@
+[project]
+name = "py2shortcuts"
+version = "0.5.0"
+description = "A typed Python-to-Apple-Shortcuts compiler"
+readme = "README.md"
+authors = [{ name = "Sheng Fan", email = "git@sheng.fan" }]
+requires-python = ">=3.14"
+dependencies = ["typer>=0.12.0"]
+
+[project.scripts]
+py2shortcuts = "py2shortcuts:main"
+
+[build-system]
+requires = ["uv_build>=0.11.2,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["py2shortcuts", "ios", "shortcutslib"]

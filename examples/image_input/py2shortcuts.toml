@@ -1,0 +1,5 @@
+[shortcut]
+name = "Image Input Demo"
+
+[shortcut.input]
+types = ["images", "files", "pdfs", "safari-webpages"]

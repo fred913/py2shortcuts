@@ -1,0 +1,5 @@
+[shortcut]
+name = "MNIST"
+
+[shortcut.input]
+types = ["images", "files", "pdfs", "safari-webpages"]
