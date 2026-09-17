@@ -4,19 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import logging
 import os
 import plistlib
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 
 MAX_REQUEST_BYTES = 64 * 1024 * 1024
-SIGN_TIMEOUT_SECONDS = 180
+SIGN_TIMEOUT_SECONDS = int(os.environ.get("PY2SCSIGN_TIMEOUT_SECONDS", "300"))
+SIGN_ATTEMPTS = 3
 TOKEN_FILE = Path(os.environ["PY2SCSIGN_TOKEN_FILE"])
 SHORTCUTS_PATH = os.environ.get("PY2SCSIGN_SHORTCUTS_PATH", "/usr/bin/shortcuts")
 API_TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip()
+logger = logging.getLogger("uvicorn.error")
 
 if not API_TOKEN:
     raise RuntimeError("Signing token file is empty")
@@ -122,6 +126,12 @@ async def sign_workflow(
 
     workflow = await read_request_body(request)
     binary_workflow = await asyncio.to_thread(compile_binary_workflow, workflow)
+    started_at = time.monotonic()
+    logger.info(
+        "signing workflow: xml_bytes=%d binary_bytes=%d",
+        len(workflow),
+        len(binary_workflow),
+    )
 
     async with signing_slots:
         directory = Path(
@@ -131,18 +141,41 @@ async def sign_workflow(
             input_path = directory / "input.wflow"
             output_path = directory / "output.shortcut"
             await asyncio.to_thread(input_path.write_bytes, binary_workflow)
-            returncode, _, stderr = await run_command(
-                SHORTCUTS_PATH,
-                "sign",
-                "--mode",
-                "anyone",
-                "--input",
-                str(input_path),
-                "--output",
-                str(output_path),
-            )
-            if returncode != 0:
+            message = ""
+            for attempt in range(1, SIGN_ATTEMPTS + 1):
+                await asyncio.to_thread(output_path.unlink, missing_ok=True)
+                returncode, _, stderr = await run_command(
+                    SHORTCUTS_PATH,
+                    "sign",
+                    "--mode",
+                    "anyone",
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(output_path),
+                )
+                if returncode == 0:
+                    break
                 message = stderr.decode("utf-8", errors="replace").strip()
+                retryable = "NSURLErrorDomain Code=500" in message
+                if not retryable or attempt == SIGN_ATTEMPTS:
+                    break
+                delay = 2**attempt
+                logger.warning(
+                    "transient shortcuts sign failure on attempt %d/%d; retrying in %ds",
+                    attempt,
+                    SIGN_ATTEMPTS,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+            if returncode != 0:
+                logger.error(
+                    "shortcuts sign failed after %d attempts and %.1fs: %s",
+                    attempt,
+                    time.monotonic() - started_at,
+                    message,
+                )
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"shortcuts sign failed: {message}",
@@ -158,8 +191,14 @@ async def sign_workflow(
             await asyncio.to_thread(shutil.rmtree, directory, True)
 
     if not signed.startswith(b"AEA1"):
+        logger.error("shortcuts sign returned a non-AEA1 file")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="invalid signed output",
         )
+    logger.info(
+        "signed workflow: output_bytes=%d elapsed_seconds=%.1f",
+        len(signed),
+        time.monotonic() - started_at,
+    )
     return Response(content=signed, media_type="application/octet-stream")

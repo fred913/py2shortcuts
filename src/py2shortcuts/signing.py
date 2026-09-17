@@ -7,6 +7,7 @@ function is called by the user.
 
 from __future__ import annotations
 
+import json
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -39,8 +40,13 @@ def sign_xml_plist(xml_plist: bytes, *, timeout_seconds: float = 45.0) -> bytes:
         with urlopen(request, timeout=timeout_seconds) as response:
             shortcut = response.read()
     except HTTPError as error:
+        response_body = error.read(8192).decode("utf-8", errors="replace")
+        try:
+            response_detail = json.loads(response_body).get("detail", response_body)
+        except json.JSONDecodeError:
+            response_detail = response_body
         raise SigningError(
-            f"Remote signing returned HTTP {error.code}, message: {error.msg}"
+            f"Remote signing returned HTTP {error.code}: {response_detail}"
         ) from error
     except URLError as error:
         raise SigningError("Remote signing request failed") from error
