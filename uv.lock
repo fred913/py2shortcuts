@@ -43,7 +43,7 @@ wheels = [
 
 [[package]]
 name = "py2shortcuts"
-version = "0.5.0"
+version = "0.5.10"
 source = { editable = "." }
 dependencies = [
     { name = "typer" },

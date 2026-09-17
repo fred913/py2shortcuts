@@ -72,14 +72,15 @@ def build(
         include_header_comment=not no_header_comment,
     )
     suffix = ".bplist" if binary else ".plist"
-    target = output or entrypoint.with_suffix(suffix)
+    default_base = source if source.is_dir() else entrypoint
+    target = output or default_base.with_suffix(suffix)
     payload = compilation.binary() if binary else compilation.xml()
     target.write_bytes(payload)
     print(f"Wrote {target}")
 
     if sign:
         # The existing signer expects XML, so always sign the XML representation.
-        signed_target = signed_output or entrypoint.with_suffix(".shortcut")
+        signed_target = signed_output or default_base.with_suffix(".shortcut")
         signed_target.write_bytes(sign_xml_plist(compilation.xml()))
         print(f"Wrote {signed_target}")
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import uuid
-from typing import Any
 
 from .. import ir
 from ..errors import CompileError
@@ -100,6 +99,7 @@ class ShortcutsBackend:
         self.workflow_types = workflow_types
         self.uses_shortcut_input = False
         self.loop_depth = 0
+        self._temp_counter = 0
         self.var_types: dict[str, str] = {}
 
     def compile(self, module: ir.Module) -> Workflow:
@@ -117,7 +117,7 @@ class ShortcutsBackend:
             self.emit_stmt(statement)
         if self.uses_shortcut_input and not self.input_classes:
             raise CompileError(
-                "ios.shortcuts.input() requires shortcut.input.types in py2shortcuts.toml"
+                "ios.shortcuts.shortcut_input() requires shortcut.input.types in py2shortcuts.toml"
             )
         return workflow(
             self.actions,
@@ -136,6 +136,14 @@ class ShortcutsBackend:
 
         if isinstance(statement, ir.ExprStmt):
             self.emit_expr(statement.value)
+            return
+
+        if isinstance(statement, ir.AppendStmt):
+            value = self.require_value(self.emit_expr(statement.value), context=f"append to {statement.target}")
+            self.actions.append(
+                action("appendvariable", WFVariableName=statement.target, WFInput=value.attachment())
+            )
+            self.var_types[statement.target] = "list"
             return
 
         if isinstance(statement, ir.IfStmt):
@@ -161,6 +169,11 @@ class ShortcutsBackend:
 
         if isinstance(expression, ir.Symbol):
             raise CompileError(f"compile-time symbol {expression.name!r} cannot be used as a runtime value")
+
+        if isinstance(expression, ir.BlockExpr):
+            for statement in expression.body:
+                self.emit_stmt(statement)
+            return self.emit_expr(expression.result)
 
         if isinstance(expression, ir.Binary):
             return self.emit_binary(expression)
@@ -257,16 +270,38 @@ class ShortcutsBackend:
         return ValueRef.action(result, "Calculation Result")
 
     def emit_list(self, expression: ir.ListExpr) -> ValueRef:
-        items: list[PlistValue] = []
-        for item in expression.items:
-            if isinstance(item, ir.Literal) and isinstance(item.value, str):
-                items.append(item.value)
-            else:
-                value = self.require_value(self.emit_expr(item), context="list item")
-                items.append(self.text_token_from_refs((value,)))
-        result = action("list", WFItems=items)
-        self.actions.append(result)
-        return ValueRef.action(result, "List")
+        # The List action's WFItems field is text-oriented. Embedding dynamic
+        # numeric ActionOutputs there via WFTextTokenString coerces them to
+        # text, which later breaks arithmetic (notably list comprehensions over
+        # decoded image pixels). Materialize Python lists as a real mutable
+        # Shortcuts variable and append each value with Add to Variable so item
+        # types are preserved.
+        values = [
+            self.require_value(self.emit_expr(item), context="list item")
+            for item in expression.items
+        ]
+        return self.emit_runtime_list(values)
+
+    def emit_runtime_list(self, values: list[ValueRef]) -> ValueRef:
+        empty = action("list", WFItems=[])
+        self.actions.append(empty)
+
+        name = self.new_temp_variable("list")
+        self.actions.append(
+            action(
+                "setvariable",
+                WFVariableName=name,
+                WFInput=ValueRef.action(empty, "List").attachment(),
+            )
+        )
+        self.var_types[name] = "list"
+
+        for value in values:
+            self.actions.append(
+                action("appendvariable", WFVariableName=name, WFInput=value.attachment())
+            )
+
+        return ValueRef.variable(name)
 
     def emit_dict(self, expression: ir.DictExpr) -> ValueRef:
         fields: list[PlistValue] = []
@@ -384,14 +419,13 @@ class ShortcutsBackend:
     def emit_for_each(self, statement: ir.ForEachStmt) -> None:
         iterable = self.require_value(self.emit_expr(statement.iterable), context="for iterable")
         group = self.new_uuid()
-        self.actions.append(
-            action(
-                "repeat.each",
-                GroupingIdentifier=group,
-                WFControlFlowMode=0,
-                WFInput=iterable.attachment(),
-            )
+        repeat_start = action(
+            "repeat.each",
+            GroupingIdentifier=group,
+            WFControlFlowMode=0,
+            WFInput=iterable.attachment(),
         )
+        self.actions.append(repeat_start)
         self.loop_depth += 1
         try:
             repeat_item = ValueRef.variable(self.repeat_variable_name("Repeat Item"))
@@ -425,14 +459,13 @@ class ShortcutsBackend:
             count_param = count.attachment()
 
         group = self.new_uuid()
-        self.actions.append(
-            action(
-                "repeat.count",
-                GroupingIdentifier=group,
-                WFControlFlowMode=0,
-                WFRepeatCount=count_param,
-            )
+        repeat_start = action(
+            "repeat.count",
+            GroupingIdentifier=group,
+            WFControlFlowMode=0,
+            WFRepeatCount=count_param,
         )
+        self.actions.append(repeat_start)
         self.loop_depth += 1
         try:
             index = ValueRef.variable(self.repeat_variable_name("Repeat Index"))
@@ -591,6 +624,8 @@ class ShortcutsBackend:
                 return "text"
         if isinstance(expression, ir.Var):
             return self.var_types.get(expression.name, "unknown")
+        if isinstance(expression, ir.BlockExpr):
+            return self.expr_type(expression.result)
         if isinstance(expression, (ir.Compare, ir.BoolExpr)) or (
             isinstance(expression, ir.Unary) and expression.op == "not"
         ):
@@ -678,6 +713,10 @@ class ShortcutsBackend:
     @staticmethod
     def new_uuid() -> str:
         return str(uuid.uuid4()).upper()
+
+    def new_temp_variable(self, prefix: str) -> str:
+        self._temp_counter += 1
+        return f"__py2s_{prefix}_{self._temp_counter}"
 
     def repeat_variable_name(self, base: str) -> str:
         if self.loop_depth <= 1:

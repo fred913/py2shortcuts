@@ -14,13 +14,17 @@ from pathlib import Path
 import random
 
 
+SHOWCASE_IMAGE_SIZE = 7
+SHOWCASE_HIDDEN_SIZE = 16
+
+
 @dataclass(frozen=True, slots=True)
 class TrainConfig:
     data_dir: Path
     output: Path
     checkpoint: Path | None = None
-    image_size: int = 7
-    hidden_size: int = 16
+    image_size: int = SHOWCASE_IMAGE_SIZE
+    hidden_size: int = SHOWCASE_HIDDEN_SIZE
     epochs: int = 6
     batch_size: int = 256
     learning_rate: float = 1e-3
@@ -73,6 +77,11 @@ def export_weights(model, path: Path, *, accuracy: float, config: TrainConfig) -
 
 
 def train_and_export(config: TrainConfig) -> float:
+    if config.image_size != SHOWCASE_IMAGE_SIZE or config.hidden_size != SHOWCASE_HIDDEN_SIZE:
+        raise SystemExit(
+            "examples/mnist/model.py is the fixed 49 -> 16 -> 10 showcase model; "
+            "train with --image-size 7 --hidden-size 16 so exported weights match the pure-Python inference source"
+        )
     try:
         import torch
         from torch import nn
@@ -87,13 +96,22 @@ def train_and_export(config: TrainConfig) -> float:
     random.seed(config.seed)
     torch.manual_seed(config.seed)
 
-    transform = transforms.Compose(
-        [
-            transforms.Resize((config.image_size, config.image_size), antialias=True),
-            transforms.ToTensor(),
-            transforms.Lambda(lambda image: image.flatten()),
-        ]
-    )
+    # Match shortcutslib.image.decode_image(): the runtime decoder samples two
+    # quarter-cell positions on each axis and averages the resulting 2x2 grid.
+    # MNIST source images are exactly 28x28 and the showcase target is 7x7, so
+    # those source indices are 1/3, 5/7, ..., 25/27 on each axis.
+    to_tensor = transforms.ToTensor()
+
+    def showcase_downsample(image):
+        tensor = to_tensor(image)
+        return (
+            tensor[:, 1::4, 1::4]
+            + tensor[:, 1::4, 3::4]
+            + tensor[:, 3::4, 1::4]
+            + tensor[:, 3::4, 3::4]
+        ).div(4).flatten()
+
+    transform = showcase_downsample
     train_set = datasets.MNIST(config.data_dir, train=True, download=True, transform=transform)
     test_set = datasets.MNIST(config.data_dir, train=False, download=True, transform=transform)
     generator = torch.Generator().manual_seed(config.seed)

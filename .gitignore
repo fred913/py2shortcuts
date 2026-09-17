@@ -11,3 +11,9 @@ wheels/
 
 *.plist
 *.shortcut
+
+# Local datasets and model artifacts
+.data
+*.pt
+*.gz
+*.zip

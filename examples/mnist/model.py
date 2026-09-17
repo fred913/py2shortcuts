@@ -1,128 +1,363 @@
-"""Compiler plugin for the tiny MNIST MLP used by the showcase."""
+"""Pure-Python inference for the compact MNIST showcase.
+
+This module intentionally contains no py2shortcuts backend/plugin code. The same
+``predict`` function can run in CPython or be inlined by the compiler frontend.
+"""
 
 from __future__ import annotations
 
-from py2shortcuts.backend.shortcuts import ValueRef
-from py2shortcuts.errors import CompileError
-from py2shortcuts.plist import action
-
-from weights import B1, B2, HIDDEN_SIZE, INPUT_SIZE, NUM_CLASSES, W1, W2
+from weights import B1, B2, W1, W2
 
 
 def predict(pixels: list[float]) -> int:
-    """Return the predicted digit. This function is compile-time only."""
-    raise RuntimeError("model.predict() is compiled by py2shortcuts; do not execute it directly")
+    """Return the most likely digit for 49 normalized grayscale pixels."""
+    x0 = pixels[0]
+    x1 = pixels[1]
+    x2 = pixels[2]
+    x3 = pixels[3]
+    x4 = pixels[4]
+    x5 = pixels[5]
+    x6 = pixels[6]
+    x7 = pixels[7]
+    x8 = pixels[8]
+    x9 = pixels[9]
+    x10 = pixels[10]
+    x11 = pixels[11]
+    x12 = pixels[12]
+    x13 = pixels[13]
+    x14 = pixels[14]
+    x15 = pixels[15]
+    x16 = pixels[16]
+    x17 = pixels[17]
+    x18 = pixels[18]
+    x19 = pixels[19]
+    x20 = pixels[20]
+    x21 = pixels[21]
+    x22 = pixels[22]
+    x23 = pixels[23]
+    x24 = pixels[24]
+    x25 = pixels[25]
+    x26 = pixels[26]
+    x27 = pixels[27]
+    x28 = pixels[28]
+    x29 = pixels[29]
+    x30 = pixels[30]
+    x31 = pixels[31]
+    x32 = pixels[32]
+    x33 = pixels[33]
+    x34 = pixels[34]
+    x35 = pixels[35]
+    x36 = pixels[36]
+    x37 = pixels[37]
+    x38 = pixels[38]
+    x39 = pixels[39]
+    x40 = pixels[40]
+    x41 = pixels[41]
+    x42 = pixels[42]
+    x43 = pixels[43]
+    x44 = pixels[44]
+    x45 = pixels[45]
+    x46 = pixels[46]
+    x47 = pixels[47]
+    x48 = pixels[48]
 
-
-def _list_item(backend, values: ValueRef, index: int) -> ValueRef:
-    result = action(
-        "getitemfromlist",
-        WFInput=values.attachment(),
-        WFItemSpecifier="Item At Index",
-        WFItemIndex=str(index + 1),
+    h0 = (
+        B1[0] + x0 * W1[0][0] + x1 * W1[0][1] + x2 * W1[0][2] + x3 * W1[0][3] + x4 * W1[0][4] +
+        x5 * W1[0][5] + x6 * W1[0][6] + x7 * W1[0][7] + x8 * W1[0][8] + x9 * W1[0][9] + x10 * W1[0][10] +
+        x11 * W1[0][11] + x12 * W1[0][12] + x13 * W1[0][13] + x14 * W1[0][14] + x15 * W1[0][15] + x16 * W1[0][16] +
+        x17 * W1[0][17] + x18 * W1[0][18] + x19 * W1[0][19] + x20 * W1[0][20] + x21 * W1[0][21] + x22 * W1[0][22] +
+        x23 * W1[0][23] + x24 * W1[0][24] + x25 * W1[0][25] + x26 * W1[0][26] + x27 * W1[0][27] + x28 * W1[0][28] +
+        x29 * W1[0][29] + x30 * W1[0][30] + x31 * W1[0][31] + x32 * W1[0][32] + x33 * W1[0][33] + x34 * W1[0][34] +
+        x35 * W1[0][35] + x36 * W1[0][36] + x37 * W1[0][37] + x38 * W1[0][38] + x39 * W1[0][39] + x40 * W1[0][40] +
+        x41 * W1[0][41] + x42 * W1[0][42] + x43 * W1[0][43] + x44 * W1[0][44] + x45 * W1[0][45] + x46 * W1[0][46] +
+        x47 * W1[0][47] + x48 * W1[0][48]
     )
-    backend.actions.append(result)
-    return ValueRef.action(result, "Item from List")
-
-
-def _add_scaled(backend, total: ValueRef, value: ValueRef, weight: float) -> ValueRef:
-    if weight == 0.0:
-        return total
-    product = backend.emit_math(value, "*", repr(float(weight)))
-    return backend.emit_math(total, "+", product)
-
-
-def _relu(backend, value: ValueRef) -> ValueRef:
-    group = backend.new_uuid()
-    backend.actions.append(
-        action(
-            "conditional",
-            GroupingIdentifier=group,
-            WFControlFlowMode=0,
-            WFInput=value.condition_input(),
-            WFCondition=2,  # greater than
-            WFNumberValue="0",
-        )
+    if h0 < 0.0:
+        h0 = 0.0
+    h1 = (
+        B1[1] + x0 * W1[1][0] + x1 * W1[1][1] + x2 * W1[1][2] + x3 * W1[1][3] + x4 * W1[1][4] +
+        x5 * W1[1][5] + x6 * W1[1][6] + x7 * W1[1][7] + x8 * W1[1][8] + x9 * W1[1][9] + x10 * W1[1][10] +
+        x11 * W1[1][11] + x12 * W1[1][12] + x13 * W1[1][13] + x14 * W1[1][14] + x15 * W1[1][15] + x16 * W1[1][16] +
+        x17 * W1[1][17] + x18 * W1[1][18] + x19 * W1[1][19] + x20 * W1[1][20] + x21 * W1[1][21] + x22 * W1[1][22] +
+        x23 * W1[1][23] + x24 * W1[1][24] + x25 * W1[1][25] + x26 * W1[1][26] + x27 * W1[1][27] + x28 * W1[1][28] +
+        x29 * W1[1][29] + x30 * W1[1][30] + x31 * W1[1][31] + x32 * W1[1][32] + x33 * W1[1][33] + x34 * W1[1][34] +
+        x35 * W1[1][35] + x36 * W1[1][36] + x37 * W1[1][37] + x38 * W1[1][38] + x39 * W1[1][39] + x40 * W1[1][40] +
+        x41 * W1[1][41] + x42 * W1[1][42] + x43 * W1[1][43] + x44 * W1[1][44] + x45 * W1[1][45] + x46 * W1[1][46] +
+        x47 * W1[1][47] + x48 * W1[1][48]
     )
-    backend.emit_math(value, "+", "0")
-    backend.actions.append(action("conditional", GroupingIdentifier=group, WFControlFlowMode=1))
-    backend.emit_literal(0)
-    end = action("conditional", GroupingIdentifier=group, WFControlFlowMode=2)
-    backend.actions.append(end)
-    return ValueRef.action(end, "If Result")
-
-
-def _argmax(backend, values: list[ValueRef]) -> ValueRef:
-    if not values:
-        raise CompileError("MNIST model has no output classes")
-
-    token = backend.new_uuid().replace("-", "")
-    best_value_name = f"__py2s_mnist_best_value_{token}"
-    best_index_name = f"__py2s_mnist_best_index_{token}"
-
-    backend.actions.append(
-        action("setvariable", WFVariableName=best_value_name, WFInput=values[0].attachment())
+    if h1 < 0.0:
+        h1 = 0.0
+    h2 = (
+        B1[2] + x0 * W1[2][0] + x1 * W1[2][1] + x2 * W1[2][2] + x3 * W1[2][3] + x4 * W1[2][4] +
+        x5 * W1[2][5] + x6 * W1[2][6] + x7 * W1[2][7] + x8 * W1[2][8] + x9 * W1[2][9] + x10 * W1[2][10] +
+        x11 * W1[2][11] + x12 * W1[2][12] + x13 * W1[2][13] + x14 * W1[2][14] + x15 * W1[2][15] + x16 * W1[2][16] +
+        x17 * W1[2][17] + x18 * W1[2][18] + x19 * W1[2][19] + x20 * W1[2][20] + x21 * W1[2][21] + x22 * W1[2][22] +
+        x23 * W1[2][23] + x24 * W1[2][24] + x25 * W1[2][25] + x26 * W1[2][26] + x27 * W1[2][27] + x28 * W1[2][28] +
+        x29 * W1[2][29] + x30 * W1[2][30] + x31 * W1[2][31] + x32 * W1[2][32] + x33 * W1[2][33] + x34 * W1[2][34] +
+        x35 * W1[2][35] + x36 * W1[2][36] + x37 * W1[2][37] + x38 * W1[2][38] + x39 * W1[2][39] + x40 * W1[2][40] +
+        x41 * W1[2][41] + x42 * W1[2][42] + x43 * W1[2][43] + x44 * W1[2][44] + x45 * W1[2][45] + x46 * W1[2][46] +
+        x47 * W1[2][47] + x48 * W1[2][48]
     )
-    backend.var_types[best_value_name] = "number"
-    zero = backend.emit_literal(0)
-    backend.actions.append(
-        action("setvariable", WFVariableName=best_index_name, WFInput=zero.attachment())
+    if h2 < 0.0:
+        h2 = 0.0
+    h3 = (
+        B1[3] + x0 * W1[3][0] + x1 * W1[3][1] + x2 * W1[3][2] + x3 * W1[3][3] + x4 * W1[3][4] +
+        x5 * W1[3][5] + x6 * W1[3][6] + x7 * W1[3][7] + x8 * W1[3][8] + x9 * W1[3][9] + x10 * W1[3][10] +
+        x11 * W1[3][11] + x12 * W1[3][12] + x13 * W1[3][13] + x14 * W1[3][14] + x15 * W1[3][15] + x16 * W1[3][16] +
+        x17 * W1[3][17] + x18 * W1[3][18] + x19 * W1[3][19] + x20 * W1[3][20] + x21 * W1[3][21] + x22 * W1[3][22] +
+        x23 * W1[3][23] + x24 * W1[3][24] + x25 * W1[3][25] + x26 * W1[3][26] + x27 * W1[3][27] + x28 * W1[3][28] +
+        x29 * W1[3][29] + x30 * W1[3][30] + x31 * W1[3][31] + x32 * W1[3][32] + x33 * W1[3][33] + x34 * W1[3][34] +
+        x35 * W1[3][35] + x36 * W1[3][36] + x37 * W1[3][37] + x38 * W1[3][38] + x39 * W1[3][39] + x40 * W1[3][40] +
+        x41 * W1[3][41] + x42 * W1[3][42] + x43 * W1[3][43] + x44 * W1[3][44] + x45 * W1[3][45] + x46 * W1[3][46] +
+        x47 * W1[3][47] + x48 * W1[3][48]
     )
-    backend.var_types[best_index_name] = "number"
+    if h3 < 0.0:
+        h3 = 0.0
+    h4 = (
+        B1[4] + x0 * W1[4][0] + x1 * W1[4][1] + x2 * W1[4][2] + x3 * W1[4][3] + x4 * W1[4][4] +
+        x5 * W1[4][5] + x6 * W1[4][6] + x7 * W1[4][7] + x8 * W1[4][8] + x9 * W1[4][9] + x10 * W1[4][10] +
+        x11 * W1[4][11] + x12 * W1[4][12] + x13 * W1[4][13] + x14 * W1[4][14] + x15 * W1[4][15] + x16 * W1[4][16] +
+        x17 * W1[4][17] + x18 * W1[4][18] + x19 * W1[4][19] + x20 * W1[4][20] + x21 * W1[4][21] + x22 * W1[4][22] +
+        x23 * W1[4][23] + x24 * W1[4][24] + x25 * W1[4][25] + x26 * W1[4][26] + x27 * W1[4][27] + x28 * W1[4][28] +
+        x29 * W1[4][29] + x30 * W1[4][30] + x31 * W1[4][31] + x32 * W1[4][32] + x33 * W1[4][33] + x34 * W1[4][34] +
+        x35 * W1[4][35] + x36 * W1[4][36] + x37 * W1[4][37] + x38 * W1[4][38] + x39 * W1[4][39] + x40 * W1[4][40] +
+        x41 * W1[4][41] + x42 * W1[4][42] + x43 * W1[4][43] + x44 * W1[4][44] + x45 * W1[4][45] + x46 * W1[4][46] +
+        x47 * W1[4][47] + x48 * W1[4][48]
+    )
+    if h4 < 0.0:
+        h4 = 0.0
+    h5 = (
+        B1[5] + x0 * W1[5][0] + x1 * W1[5][1] + x2 * W1[5][2] + x3 * W1[5][3] + x4 * W1[5][4] +
+        x5 * W1[5][5] + x6 * W1[5][6] + x7 * W1[5][7] + x8 * W1[5][8] + x9 * W1[5][9] + x10 * W1[5][10] +
+        x11 * W1[5][11] + x12 * W1[5][12] + x13 * W1[5][13] + x14 * W1[5][14] + x15 * W1[5][15] + x16 * W1[5][16] +
+        x17 * W1[5][17] + x18 * W1[5][18] + x19 * W1[5][19] + x20 * W1[5][20] + x21 * W1[5][21] + x22 * W1[5][22] +
+        x23 * W1[5][23] + x24 * W1[5][24] + x25 * W1[5][25] + x26 * W1[5][26] + x27 * W1[5][27] + x28 * W1[5][28] +
+        x29 * W1[5][29] + x30 * W1[5][30] + x31 * W1[5][31] + x32 * W1[5][32] + x33 * W1[5][33] + x34 * W1[5][34] +
+        x35 * W1[5][35] + x36 * W1[5][36] + x37 * W1[5][37] + x38 * W1[5][38] + x39 * W1[5][39] + x40 * W1[5][40] +
+        x41 * W1[5][41] + x42 * W1[5][42] + x43 * W1[5][43] + x44 * W1[5][44] + x45 * W1[5][45] + x46 * W1[5][46] +
+        x47 * W1[5][47] + x48 * W1[5][48]
+    )
+    if h5 < 0.0:
+        h5 = 0.0
+    h6 = (
+        B1[6] + x0 * W1[6][0] + x1 * W1[6][1] + x2 * W1[6][2] + x3 * W1[6][3] + x4 * W1[6][4] +
+        x5 * W1[6][5] + x6 * W1[6][6] + x7 * W1[6][7] + x8 * W1[6][8] + x9 * W1[6][9] + x10 * W1[6][10] +
+        x11 * W1[6][11] + x12 * W1[6][12] + x13 * W1[6][13] + x14 * W1[6][14] + x15 * W1[6][15] + x16 * W1[6][16] +
+        x17 * W1[6][17] + x18 * W1[6][18] + x19 * W1[6][19] + x20 * W1[6][20] + x21 * W1[6][21] + x22 * W1[6][22] +
+        x23 * W1[6][23] + x24 * W1[6][24] + x25 * W1[6][25] + x26 * W1[6][26] + x27 * W1[6][27] + x28 * W1[6][28] +
+        x29 * W1[6][29] + x30 * W1[6][30] + x31 * W1[6][31] + x32 * W1[6][32] + x33 * W1[6][33] + x34 * W1[6][34] +
+        x35 * W1[6][35] + x36 * W1[6][36] + x37 * W1[6][37] + x38 * W1[6][38] + x39 * W1[6][39] + x40 * W1[6][40] +
+        x41 * W1[6][41] + x42 * W1[6][42] + x43 * W1[6][43] + x44 * W1[6][44] + x45 * W1[6][45] + x46 * W1[6][46] +
+        x47 * W1[6][47] + x48 * W1[6][48]
+    )
+    if h6 < 0.0:
+        h6 = 0.0
+    h7 = (
+        B1[7] + x0 * W1[7][0] + x1 * W1[7][1] + x2 * W1[7][2] + x3 * W1[7][3] + x4 * W1[7][4] +
+        x5 * W1[7][5] + x6 * W1[7][6] + x7 * W1[7][7] + x8 * W1[7][8] + x9 * W1[7][9] + x10 * W1[7][10] +
+        x11 * W1[7][11] + x12 * W1[7][12] + x13 * W1[7][13] + x14 * W1[7][14] + x15 * W1[7][15] + x16 * W1[7][16] +
+        x17 * W1[7][17] + x18 * W1[7][18] + x19 * W1[7][19] + x20 * W1[7][20] + x21 * W1[7][21] + x22 * W1[7][22] +
+        x23 * W1[7][23] + x24 * W1[7][24] + x25 * W1[7][25] + x26 * W1[7][26] + x27 * W1[7][27] + x28 * W1[7][28] +
+        x29 * W1[7][29] + x30 * W1[7][30] + x31 * W1[7][31] + x32 * W1[7][32] + x33 * W1[7][33] + x34 * W1[7][34] +
+        x35 * W1[7][35] + x36 * W1[7][36] + x37 * W1[7][37] + x38 * W1[7][38] + x39 * W1[7][39] + x40 * W1[7][40] +
+        x41 * W1[7][41] + x42 * W1[7][42] + x43 * W1[7][43] + x44 * W1[7][44] + x45 * W1[7][45] + x46 * W1[7][46] +
+        x47 * W1[7][47] + x48 * W1[7][48]
+    )
+    if h7 < 0.0:
+        h7 = 0.0
+    h8 = (
+        B1[8] + x0 * W1[8][0] + x1 * W1[8][1] + x2 * W1[8][2] + x3 * W1[8][3] + x4 * W1[8][4] +
+        x5 * W1[8][5] + x6 * W1[8][6] + x7 * W1[8][7] + x8 * W1[8][8] + x9 * W1[8][9] + x10 * W1[8][10] +
+        x11 * W1[8][11] + x12 * W1[8][12] + x13 * W1[8][13] + x14 * W1[8][14] + x15 * W1[8][15] + x16 * W1[8][16] +
+        x17 * W1[8][17] + x18 * W1[8][18] + x19 * W1[8][19] + x20 * W1[8][20] + x21 * W1[8][21] + x22 * W1[8][22] +
+        x23 * W1[8][23] + x24 * W1[8][24] + x25 * W1[8][25] + x26 * W1[8][26] + x27 * W1[8][27] + x28 * W1[8][28] +
+        x29 * W1[8][29] + x30 * W1[8][30] + x31 * W1[8][31] + x32 * W1[8][32] + x33 * W1[8][33] + x34 * W1[8][34] +
+        x35 * W1[8][35] + x36 * W1[8][36] + x37 * W1[8][37] + x38 * W1[8][38] + x39 * W1[8][39] + x40 * W1[8][40] +
+        x41 * W1[8][41] + x42 * W1[8][42] + x43 * W1[8][43] + x44 * W1[8][44] + x45 * W1[8][45] + x46 * W1[8][46] +
+        x47 * W1[8][47] + x48 * W1[8][48]
+    )
+    if h8 < 0.0:
+        h8 = 0.0
+    h9 = (
+        B1[9] + x0 * W1[9][0] + x1 * W1[9][1] + x2 * W1[9][2] + x3 * W1[9][3] + x4 * W1[9][4] +
+        x5 * W1[9][5] + x6 * W1[9][6] + x7 * W1[9][7] + x8 * W1[9][8] + x9 * W1[9][9] + x10 * W1[9][10] +
+        x11 * W1[9][11] + x12 * W1[9][12] + x13 * W1[9][13] + x14 * W1[9][14] + x15 * W1[9][15] + x16 * W1[9][16] +
+        x17 * W1[9][17] + x18 * W1[9][18] + x19 * W1[9][19] + x20 * W1[9][20] + x21 * W1[9][21] + x22 * W1[9][22] +
+        x23 * W1[9][23] + x24 * W1[9][24] + x25 * W1[9][25] + x26 * W1[9][26] + x27 * W1[9][27] + x28 * W1[9][28] +
+        x29 * W1[9][29] + x30 * W1[9][30] + x31 * W1[9][31] + x32 * W1[9][32] + x33 * W1[9][33] + x34 * W1[9][34] +
+        x35 * W1[9][35] + x36 * W1[9][36] + x37 * W1[9][37] + x38 * W1[9][38] + x39 * W1[9][39] + x40 * W1[9][40] +
+        x41 * W1[9][41] + x42 * W1[9][42] + x43 * W1[9][43] + x44 * W1[9][44] + x45 * W1[9][45] + x46 * W1[9][46] +
+        x47 * W1[9][47] + x48 * W1[9][48]
+    )
+    if h9 < 0.0:
+        h9 = 0.0
+    h10 = (
+        B1[10] + x0 * W1[10][0] + x1 * W1[10][1] + x2 * W1[10][2] + x3 * W1[10][3] + x4 * W1[10][4] +
+        x5 * W1[10][5] + x6 * W1[10][6] + x7 * W1[10][7] + x8 * W1[10][8] + x9 * W1[10][9] + x10 * W1[10][10] +
+        x11 * W1[10][11] + x12 * W1[10][12] + x13 * W1[10][13] + x14 * W1[10][14] + x15 * W1[10][15] + x16 * W1[10][16] +
+        x17 * W1[10][17] + x18 * W1[10][18] + x19 * W1[10][19] + x20 * W1[10][20] + x21 * W1[10][21] + x22 * W1[10][22] +
+        x23 * W1[10][23] + x24 * W1[10][24] + x25 * W1[10][25] + x26 * W1[10][26] + x27 * W1[10][27] + x28 * W1[10][28] +
+        x29 * W1[10][29] + x30 * W1[10][30] + x31 * W1[10][31] + x32 * W1[10][32] + x33 * W1[10][33] + x34 * W1[10][34] +
+        x35 * W1[10][35] + x36 * W1[10][36] + x37 * W1[10][37] + x38 * W1[10][38] + x39 * W1[10][39] + x40 * W1[10][40] +
+        x41 * W1[10][41] + x42 * W1[10][42] + x43 * W1[10][43] + x44 * W1[10][44] + x45 * W1[10][45] + x46 * W1[10][46] +
+        x47 * W1[10][47] + x48 * W1[10][48]
+    )
+    if h10 < 0.0:
+        h10 = 0.0
+    h11 = (
+        B1[11] + x0 * W1[11][0] + x1 * W1[11][1] + x2 * W1[11][2] + x3 * W1[11][3] + x4 * W1[11][4] +
+        x5 * W1[11][5] + x6 * W1[11][6] + x7 * W1[11][7] + x8 * W1[11][8] + x9 * W1[11][9] + x10 * W1[11][10] +
+        x11 * W1[11][11] + x12 * W1[11][12] + x13 * W1[11][13] + x14 * W1[11][14] + x15 * W1[11][15] + x16 * W1[11][16] +
+        x17 * W1[11][17] + x18 * W1[11][18] + x19 * W1[11][19] + x20 * W1[11][20] + x21 * W1[11][21] + x22 * W1[11][22] +
+        x23 * W1[11][23] + x24 * W1[11][24] + x25 * W1[11][25] + x26 * W1[11][26] + x27 * W1[11][27] + x28 * W1[11][28] +
+        x29 * W1[11][29] + x30 * W1[11][30] + x31 * W1[11][31] + x32 * W1[11][32] + x33 * W1[11][33] + x34 * W1[11][34] +
+        x35 * W1[11][35] + x36 * W1[11][36] + x37 * W1[11][37] + x38 * W1[11][38] + x39 * W1[11][39] + x40 * W1[11][40] +
+        x41 * W1[11][41] + x42 * W1[11][42] + x43 * W1[11][43] + x44 * W1[11][44] + x45 * W1[11][45] + x46 * W1[11][46] +
+        x47 * W1[11][47] + x48 * W1[11][48]
+    )
+    if h11 < 0.0:
+        h11 = 0.0
+    h12 = (
+        B1[12] + x0 * W1[12][0] + x1 * W1[12][1] + x2 * W1[12][2] + x3 * W1[12][3] + x4 * W1[12][4] +
+        x5 * W1[12][5] + x6 * W1[12][6] + x7 * W1[12][7] + x8 * W1[12][8] + x9 * W1[12][9] + x10 * W1[12][10] +
+        x11 * W1[12][11] + x12 * W1[12][12] + x13 * W1[12][13] + x14 * W1[12][14] + x15 * W1[12][15] + x16 * W1[12][16] +
+        x17 * W1[12][17] + x18 * W1[12][18] + x19 * W1[12][19] + x20 * W1[12][20] + x21 * W1[12][21] + x22 * W1[12][22] +
+        x23 * W1[12][23] + x24 * W1[12][24] + x25 * W1[12][25] + x26 * W1[12][26] + x27 * W1[12][27] + x28 * W1[12][28] +
+        x29 * W1[12][29] + x30 * W1[12][30] + x31 * W1[12][31] + x32 * W1[12][32] + x33 * W1[12][33] + x34 * W1[12][34] +
+        x35 * W1[12][35] + x36 * W1[12][36] + x37 * W1[12][37] + x38 * W1[12][38] + x39 * W1[12][39] + x40 * W1[12][40] +
+        x41 * W1[12][41] + x42 * W1[12][42] + x43 * W1[12][43] + x44 * W1[12][44] + x45 * W1[12][45] + x46 * W1[12][46] +
+        x47 * W1[12][47] + x48 * W1[12][48]
+    )
+    if h12 < 0.0:
+        h12 = 0.0
+    h13 = (
+        B1[13] + x0 * W1[13][0] + x1 * W1[13][1] + x2 * W1[13][2] + x3 * W1[13][3] + x4 * W1[13][4] +
+        x5 * W1[13][5] + x6 * W1[13][6] + x7 * W1[13][7] + x8 * W1[13][8] + x9 * W1[13][9] + x10 * W1[13][10] +
+        x11 * W1[13][11] + x12 * W1[13][12] + x13 * W1[13][13] + x14 * W1[13][14] + x15 * W1[13][15] + x16 * W1[13][16] +
+        x17 * W1[13][17] + x18 * W1[13][18] + x19 * W1[13][19] + x20 * W1[13][20] + x21 * W1[13][21] + x22 * W1[13][22] +
+        x23 * W1[13][23] + x24 * W1[13][24] + x25 * W1[13][25] + x26 * W1[13][26] + x27 * W1[13][27] + x28 * W1[13][28] +
+        x29 * W1[13][29] + x30 * W1[13][30] + x31 * W1[13][31] + x32 * W1[13][32] + x33 * W1[13][33] + x34 * W1[13][34] +
+        x35 * W1[13][35] + x36 * W1[13][36] + x37 * W1[13][37] + x38 * W1[13][38] + x39 * W1[13][39] + x40 * W1[13][40] +
+        x41 * W1[13][41] + x42 * W1[13][42] + x43 * W1[13][43] + x44 * W1[13][44] + x45 * W1[13][45] + x46 * W1[13][46] +
+        x47 * W1[13][47] + x48 * W1[13][48]
+    )
+    if h13 < 0.0:
+        h13 = 0.0
+    h14 = (
+        B1[14] + x0 * W1[14][0] + x1 * W1[14][1] + x2 * W1[14][2] + x3 * W1[14][3] + x4 * W1[14][4] +
+        x5 * W1[14][5] + x6 * W1[14][6] + x7 * W1[14][7] + x8 * W1[14][8] + x9 * W1[14][9] + x10 * W1[14][10] +
+        x11 * W1[14][11] + x12 * W1[14][12] + x13 * W1[14][13] + x14 * W1[14][14] + x15 * W1[14][15] + x16 * W1[14][16] +
+        x17 * W1[14][17] + x18 * W1[14][18] + x19 * W1[14][19] + x20 * W1[14][20] + x21 * W1[14][21] + x22 * W1[14][22] +
+        x23 * W1[14][23] + x24 * W1[14][24] + x25 * W1[14][25] + x26 * W1[14][26] + x27 * W1[14][27] + x28 * W1[14][28] +
+        x29 * W1[14][29] + x30 * W1[14][30] + x31 * W1[14][31] + x32 * W1[14][32] + x33 * W1[14][33] + x34 * W1[14][34] +
+        x35 * W1[14][35] + x36 * W1[14][36] + x37 * W1[14][37] + x38 * W1[14][38] + x39 * W1[14][39] + x40 * W1[14][40] +
+        x41 * W1[14][41] + x42 * W1[14][42] + x43 * W1[14][43] + x44 * W1[14][44] + x45 * W1[14][45] + x46 * W1[14][46] +
+        x47 * W1[14][47] + x48 * W1[14][48]
+    )
+    if h14 < 0.0:
+        h14 = 0.0
+    h15 = (
+        B1[15] + x0 * W1[15][0] + x1 * W1[15][1] + x2 * W1[15][2] + x3 * W1[15][3] + x4 * W1[15][4] +
+        x5 * W1[15][5] + x6 * W1[15][6] + x7 * W1[15][7] + x8 * W1[15][8] + x9 * W1[15][9] + x10 * W1[15][10] +
+        x11 * W1[15][11] + x12 * W1[15][12] + x13 * W1[15][13] + x14 * W1[15][14] + x15 * W1[15][15] + x16 * W1[15][16] +
+        x17 * W1[15][17] + x18 * W1[15][18] + x19 * W1[15][19] + x20 * W1[15][20] + x21 * W1[15][21] + x22 * W1[15][22] +
+        x23 * W1[15][23] + x24 * W1[15][24] + x25 * W1[15][25] + x26 * W1[15][26] + x27 * W1[15][27] + x28 * W1[15][28] +
+        x29 * W1[15][29] + x30 * W1[15][30] + x31 * W1[15][31] + x32 * W1[15][32] + x33 * W1[15][33] + x34 * W1[15][34] +
+        x35 * W1[15][35] + x36 * W1[15][36] + x37 * W1[15][37] + x38 * W1[15][38] + x39 * W1[15][39] + x40 * W1[15][40] +
+        x41 * W1[15][41] + x42 * W1[15][42] + x43 * W1[15][43] + x44 * W1[15][44] + x45 * W1[15][45] + x46 * W1[15][46] +
+        x47 * W1[15][47] + x48 * W1[15][48]
+    )
+    if h15 < 0.0:
+        h15 = 0.0
 
-    for index, current in enumerate(values[1:], start=1):
-        group = backend.new_uuid()
-        backend.actions.append(
-            action(
-                "conditional",
-                GroupingIdentifier=group,
-                WFControlFlowMode=0,
-                WFInput=current.condition_input(),
-                WFCondition=2,  # greater than
-                WFNumberValue=ValueRef.variable(best_value_name).attachment(),
-            )
-        )
-        backend.actions.append(
-            action("setvariable", WFVariableName=best_value_name, WFInput=current.attachment())
-        )
-        idx = backend.emit_literal(index)
-        backend.actions.append(
-            action("setvariable", WFVariableName=best_index_name, WFInput=idx.attachment())
-        )
-        backend.actions.append(action("conditional", GroupingIdentifier=group, WFControlFlowMode=2))
+    score0 = (
+        B2[0] + h0 * W2[0][0] + h1 * W2[0][1] + h2 * W2[0][2] + h3 * W2[0][3] +
+        h4 * W2[0][4] + h5 * W2[0][5] + h6 * W2[0][6] + h7 * W2[0][7] + h8 * W2[0][8] +
+        h9 * W2[0][9] + h10 * W2[0][10] + h11 * W2[0][11] + h12 * W2[0][12] + h13 * W2[0][13] +
+        h14 * W2[0][14] + h15 * W2[0][15]
+    )
+    score1 = (
+        B2[1] + h0 * W2[1][0] + h1 * W2[1][1] + h2 * W2[1][2] + h3 * W2[1][3] +
+        h4 * W2[1][4] + h5 * W2[1][5] + h6 * W2[1][6] + h7 * W2[1][7] + h8 * W2[1][8] +
+        h9 * W2[1][9] + h10 * W2[1][10] + h11 * W2[1][11] + h12 * W2[1][12] + h13 * W2[1][13] +
+        h14 * W2[1][14] + h15 * W2[1][15]
+    )
+    score2 = (
+        B2[2] + h0 * W2[2][0] + h1 * W2[2][1] + h2 * W2[2][2] + h3 * W2[2][3] +
+        h4 * W2[2][4] + h5 * W2[2][5] + h6 * W2[2][6] + h7 * W2[2][7] + h8 * W2[2][8] +
+        h9 * W2[2][9] + h10 * W2[2][10] + h11 * W2[2][11] + h12 * W2[2][12] + h13 * W2[2][13] +
+        h14 * W2[2][14] + h15 * W2[2][15]
+    )
+    score3 = (
+        B2[3] + h0 * W2[3][0] + h1 * W2[3][1] + h2 * W2[3][2] + h3 * W2[3][3] +
+        h4 * W2[3][4] + h5 * W2[3][5] + h6 * W2[3][6] + h7 * W2[3][7] + h8 * W2[3][8] +
+        h9 * W2[3][9] + h10 * W2[3][10] + h11 * W2[3][11] + h12 * W2[3][12] + h13 * W2[3][13] +
+        h14 * W2[3][14] + h15 * W2[3][15]
+    )
+    score4 = (
+        B2[4] + h0 * W2[4][0] + h1 * W2[4][1] + h2 * W2[4][2] + h3 * W2[4][3] +
+        h4 * W2[4][4] + h5 * W2[4][5] + h6 * W2[4][6] + h7 * W2[4][7] + h8 * W2[4][8] +
+        h9 * W2[4][9] + h10 * W2[4][10] + h11 * W2[4][11] + h12 * W2[4][12] + h13 * W2[4][13] +
+        h14 * W2[4][14] + h15 * W2[4][15]
+    )
+    score5 = (
+        B2[5] + h0 * W2[5][0] + h1 * W2[5][1] + h2 * W2[5][2] + h3 * W2[5][3] +
+        h4 * W2[5][4] + h5 * W2[5][5] + h6 * W2[5][6] + h7 * W2[5][7] + h8 * W2[5][8] +
+        h9 * W2[5][9] + h10 * W2[5][10] + h11 * W2[5][11] + h12 * W2[5][12] + h13 * W2[5][13] +
+        h14 * W2[5][14] + h15 * W2[5][15]
+    )
+    score6 = (
+        B2[6] + h0 * W2[6][0] + h1 * W2[6][1] + h2 * W2[6][2] + h3 * W2[6][3] +
+        h4 * W2[6][4] + h5 * W2[6][5] + h6 * W2[6][6] + h7 * W2[6][7] + h8 * W2[6][8] +
+        h9 * W2[6][9] + h10 * W2[6][10] + h11 * W2[6][11] + h12 * W2[6][12] + h13 * W2[6][13] +
+        h14 * W2[6][14] + h15 * W2[6][15]
+    )
+    score7 = (
+        B2[7] + h0 * W2[7][0] + h1 * W2[7][1] + h2 * W2[7][2] + h3 * W2[7][3] +
+        h4 * W2[7][4] + h5 * W2[7][5] + h6 * W2[7][6] + h7 * W2[7][7] + h8 * W2[7][8] +
+        h9 * W2[7][9] + h10 * W2[7][10] + h11 * W2[7][11] + h12 * W2[7][12] + h13 * W2[7][13] +
+        h14 * W2[7][14] + h15 * W2[7][15]
+    )
+    score8 = (
+        B2[8] + h0 * W2[8][0] + h1 * W2[8][1] + h2 * W2[8][2] + h3 * W2[8][3] +
+        h4 * W2[8][4] + h5 * W2[8][5] + h6 * W2[8][6] + h7 * W2[8][7] + h8 * W2[8][8] +
+        h9 * W2[8][9] + h10 * W2[8][10] + h11 * W2[8][11] + h12 * W2[8][12] + h13 * W2[8][13] +
+        h14 * W2[8][14] + h15 * W2[8][15]
+    )
+    score9 = (
+        B2[9] + h0 * W2[9][0] + h1 * W2[9][1] + h2 * W2[9][2] + h3 * W2[9][3] +
+        h4 * W2[9][4] + h5 * W2[9][5] + h6 * W2[9][6] + h7 * W2[9][7] + h8 * W2[9][8] +
+        h9 * W2[9][9] + h10 * W2[9][10] + h11 * W2[9][11] + h12 * W2[9][12] + h13 * W2[9][13] +
+        h14 * W2[9][14] + h15 * W2[9][15]
+    )
 
-    return ValueRef.variable(best_index_name)
-
-
-def register(registry):
-    @registry.call("model.predict", result_type="number")
-    def lower_predict(backend, call):
-        if len(call.args) != 1 or call.kwargs:
-            raise CompileError("model.predict(pixels) expects exactly one positional argument")
-        if len(W1) != HIDDEN_SIZE or any(len(row) != INPUT_SIZE for row in W1):
-            raise CompileError("weights.py W1 shape does not match model metadata")
-        if len(B1) != HIDDEN_SIZE:
-            raise CompileError("weights.py B1 shape does not match model metadata")
-        if len(W2) != NUM_CLASSES or any(len(row) != HIDDEN_SIZE for row in W2):
-            raise CompileError("weights.py W2 shape does not match model metadata")
-        if len(B2) != NUM_CLASSES:
-            raise CompileError("weights.py B2 shape does not match model metadata")
-
-        pixels = backend.require_value(backend.emit_expr(call.args[0]), context="MNIST pixels")
-        inputs = [_list_item(backend, pixels, index) for index in range(INPUT_SIZE)]
-
-        hidden: list[ValueRef] = []
-        for row, bias in zip(W1, B1, strict=True):
-            total = backend.emit_literal(float(bias))
-            for value, weight in zip(inputs, row, strict=True):
-                total = _add_scaled(backend, total, value, float(weight))
-            hidden.append(_relu(backend, total))
-
-        outputs: list[ValueRef] = []
-        for row, bias in zip(W2, B2, strict=True):
-            total = backend.emit_literal(float(bias))
-            for value, weight in zip(hidden, row, strict=True):
-                total = _add_scaled(backend, total, value, float(weight))
-            outputs.append(total)
-
-        return _argmax(backend, outputs)
+    best_index = 0
+    best_value = score0
+    if score1 > best_value:
+        best_index = 1
+        best_value = score1
+    if score2 > best_value:
+        best_index = 2
+        best_value = score2
+    if score3 > best_value:
+        best_index = 3
+        best_value = score3
+    if score4 > best_value:
+        best_index = 4
+        best_value = score4
+    if score5 > best_value:
+        best_index = 5
+        best_value = score5
+    if score6 > best_value:
+        best_index = 6
+        best_value = score6
+    if score7 > best_value:
+        best_index = 7
+        best_value = score7
+    if score8 > best_value:
+        best_index = 8
+        best_value = score8
+    if score9 > best_value:
+        best_index = 9
+        best_value = score9
+    return best_index

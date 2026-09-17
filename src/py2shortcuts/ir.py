@@ -94,6 +94,19 @@ class FormatString(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class BlockExpr(Expr):
+    """An expression preceded by a sequence of statements.
+
+    This is primarily used for source-level function inlining: arguments are
+    evaluated once into mangled locals, the function body is emitted in place,
+    and ``result`` is then evaluated as the value of the call expression.
+    """
+
+    body: tuple[Stmt, ...]
+    result: Expr
+
+
+@dataclass(frozen=True, slots=True)
 class Assign(Stmt):
     name: str
     value: Expr
@@ -101,6 +114,14 @@ class Assign(Stmt):
 
 @dataclass(frozen=True, slots=True)
 class ExprStmt(Stmt):
+    value: Expr
+
+
+@dataclass(frozen=True, slots=True)
+class AppendStmt(Stmt):
+    """Append one runtime value to a named list variable."""
+
+    target: str
     value: Expr
 
 

@@ -14,6 +14,7 @@ from .plugins import PluginRegistry
 from .validate import validate_workflow
 from .errors import CompileError
 from .config import ShortcutConfig, load_project_config
+from .source_modules import SourceModuleResolver
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +47,11 @@ def compile_source(
         if source_path.exists() and source_path.is_file():
             load_local_plugins_for_source(source_path, plugin_registry)
 
-    frontend = PythonFrontend(filename=filename)
+    source_resolver = None
+    if filename != "<string>":
+        source_path = Path(filename)
+        source_resolver = SourceModuleResolver(source_path.resolve().parent)
+    frontend = PythonFrontend(filename=filename, source_resolver=source_resolver)
     module = frontend.compile(source)
     effective_config = config or ShortcutConfig()
     backend = ShortcutsBackend(

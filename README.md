@@ -129,16 +129,18 @@ The compiler currently supports:
 - `if` / `else`
 - `for x in range(...)` with `step=1`
 - `for x in iterable`
-- list literals
+- list literals and `list.append(value)` on simple variables
+- list comprehensions with one `for` clause and optional `if` filters (desugared to loop + append IR)
 - flat dictionary literals with literal string keys
 - `value[0]` and `value["key"]`
 - simple f-strings
 - `print(...)`, `input(...)`, `len(...)`
-- single-expression inline functions such as `def square(x): return x * x`
+- source-level inline functions ending in `return <expression>`, including multi-statement bodies with assignments/`if`/supported loops
 - compile-time imports used as adapter namespaces
+- local sibling Python modules containing literal constants and ordinary functions; these modules are parsed and inlined without being executed by CPython
 
 Features such as `while`, `break`, `continue`, arbitrary classes, generators,
-`async`, exceptions, comprehensions, `eval`, and `exec` deliberately fail with
+`async`, exceptions, set/dict comprehensions, nested list comprehensions, `eval`, and `exec` deliberately fail with
 `CompileError` instead of silently producing incorrect workflows.
 
 ## Example
@@ -175,8 +177,11 @@ py2shortcuts build examples/simple_nn
 ```
 
 This uses `examples/simple_nn/main.py` as the entrypoint and, unless `-o` is
-given, writes `examples/simple_nn/main.plist`. Local sibling modules that expose
-`register(registry)` continue to act as compiler plugins.
+given, writes `examples/simple_nn.plist`. Passing `examples/simple_nn/main.py`
+explicitly still writes `examples/simple_nn/main.plist`. Ordinary local sibling
+modules can now provide literal constants and Python functions that are compiled
+as source. Sibling modules that expose `register(registry)` remain backend plugins
+and keep the older adapter behavior.
 
 Inspect the IR:
 
@@ -192,8 +197,10 @@ py2shortcuts build example.py --sign --signed-output Example.shortcut
 
 ## IR
 
-The frontend removes Python-specific syntax before the backend sees it. For
-example:
+The frontend removes Python-specific syntax before the backend sees it. Local
+source functions are inlined through a small `BlockExpr`: call arguments are
+evaluated once into mangled locals, the function statements are emitted in place,
+and the final return expression becomes the call value. For example:
 
 ```python
 x += 1
@@ -276,17 +283,17 @@ name = "MNIST"
 types = ["images", "files", "pdfs", "safari-webpages"]
 ```
 
-`ios.shortcuts.input()` compiles to the `ExtensionInput` magic value rather
+`ios.shortcuts.shortcut_input()` compiles to the `ExtensionInput` magic value rather
 than a fake runtime action. Explicit content conversion is available through
 Shortcuts' Content Graph:
 
 ```python
-from ios.shortcuts import input
+from ios.shortcuts import shortcut_input
 from ios.content import Image, coerce
 from ios.images import resize, convert
 from ios.data import as_bytes
 
-source = input()
+source = shortcut_input()
 image = coerce(source, Image)
 image = resize(image, width=28, height=28)
 bmp = convert(image, format="BMP")
@@ -300,10 +307,10 @@ may expand to several actions. The first image utility keeps preprocessing
 code small:
 
 ```python
-from ios.shortcuts import input
+from ios.shortcuts import shortcut_input
 from shortcutslib.image import to_bmp_bytes
 
-bmp = to_bmp_bytes(input(), width=28, height=28)
+bmp = to_bmp_bytes(shortcut_input(), width=28, height=28)
 ```
 
 On the Shortcuts backend, the current `bytes` transport is Base64 text. That is
@@ -317,26 +324,36 @@ BMP pixel decoder in `shortcutslib.image`, built on top of this abstraction.
 application entrypoint intentionally stays small:
 
 ```python
-from ios.shortcuts import input
+from ios.shortcuts import shortcut_input
 from ios.ui import show
-from shortcutslib.image import decode_bmp_grayscale, to_bmp_bytes
+from shortcutslib.image import decode_image
 from model import predict
+from utils import invert
 
-bmp = to_bmp_bytes(input(), width=7, height=7)
-pixels = decode_bmp_grayscale(bmp, width=7, height=7)
+pixels = decode_image(shortcut_input(), width=7, height=7, mode="grayscale")
+pixels = invert(pixels)
 digit = predict(pixels)
 show(f"Predicted digit: {digit}")
 ```
 
-The generated Shortcut performs the image conversion, Base64-backed BMP
-parsing, grayscale extraction, a 49 → 16 → 10 ReLU MLP, and argmax at runtime.
-The example uses 7×7 input rather than the original 28×28 MNIST resolution to
-keep a native Shortcuts workflow tractable.
+The generated Shortcut converts the original-size image to BMP, parses it over
+the Base64-backed byte transport, performs its own fixed 2×2 supersampling into
+7×7 grayscale pixels, then runs a 49 → 16 → 10 ReLU MLP and argmax. It does
+not use the native `Resize Image` action, so the model's sampling behavior is
+controlled by py2shortcuts rather than by the current Shortcuts implementation.
+The model inference itself is now **100% ordinary Python source** in
+`examples/mnist/model.py`: no `ValueRef`, action construction, backend registry,
+or plist code is used by the NN. `from model import predict` is resolved as a
+local source-module import and inlined by the Python frontend.
 
-`shortcutslib.image.decode_bmp_grayscale()` currently accepts ordinary
-bottom-up, uncompressed 24-bit BGR or 32-bit BGRA BMPs. It reads and checks the
-BMP signature, dimensions, pixel-data offset, compression mode, bit depth, and
-row padding in generated actions.
+The example uses 7×7 model input rather than the original 28×28 MNIST
+resolution to keep a native Shortcuts workflow tractable.
+`shortcutslib.image.decode_image()` keeps the source image at its original
+dimensions, supports BI_RGB 24/32-bit BMPs and the standard 32-bit BI_BITFIELDS
+layout emitted by Shortcuts, handles both positive bottom-up and negative
+top-down BMP heights, and computes source sample coordinates from the BMP header
+at runtime. The fixed 2×2 sampler uses the quarter-cell source positions on each
+axis and averages four source pixels per output pixel.
 
 The source tree includes bootstrap weights so the example can be compiled
 immediately. For a real MNIST checkpoint, run:
@@ -345,8 +362,12 @@ immediately. For a real MNIST checkpoint, run:
 uv run --with torch --with torchvision python examples/mnist/pretrain.py
 ```
 
-That script downloads MNIST, trains the compact model, writes `mnist.pt`, and
-exports plain Python constants to `examples/mnist/weights.py`. The more general
-`train.py` exposes epochs, hidden size, learning rate, and pruning controls.
-PyTorch and torchvision remain example-only training dependencies and are not
-installed with py2shortcuts.
+That script downloads MNIST, applies the same 2×2 quarter-cell supersampling
+used by the generated Shortcut, trains the compact model, writes `mnist.pt`, and
+exports plain Python constants to `examples/mnist/weights.py`. `model.py` reads
+those constants as normal Python, while the compiler statically folds indexed
+weight references during source inlining. The checked-in showcase architecture
+is fixed at 7×7 / 16 hidden units; `train.py` exposes training-rate/epoch/pruning
+controls while rejecting architecture sizes that would no longer match that
+source model. PyTorch and torchvision remain example-only training dependencies
+and are not installed with py2shortcuts.

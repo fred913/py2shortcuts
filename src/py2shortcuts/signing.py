@@ -7,11 +7,11 @@ function is called by the user.
 
 from __future__ import annotations
 
-import gzip
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-SIGNING_URL = "https://shortcuts.gluebyte.workers.dev/"
+SIGNING_URL = "https://py2scsign.pb.sheng.fan:8443/v1/sign"
+SIGNING_TOKEN = "e2a97115b95dd75b1f0b7bb7fb95e1b2e8dd1af635bc2ae2295ab3502df5d027"
 
 
 class SigningError(RuntimeError):
@@ -21,31 +21,30 @@ class SigningError(RuntimeError):
 def sign_xml_plist(xml_plist: bytes, *, timeout_seconds: float = 45.0) -> bytes:
     """Return an AEA1 signed `.shortcut` archive for an XML workflow plist.
 
-    Calling this function uploads only the supplied plist to the third-party
-    signing service. Do not pass credentials or private health data into it.
+    Calling this function uploads the supplied plist to the configured signing
+    service. The current deployment token is intentionally embedded for local
+    development and should be rotated before this package is distributed.
     """
     request = Request(
         SIGNING_URL,
-        data=gzip.compress(xml_plist),
+        data=xml_plist,
         headers={
-            "Content-Type": "application/gzip",
-            # The signing service rejects urllib's default User-Agent with 403.
+            "Authorization": f"Bearer {SIGNING_TOKEN}",
+            "Content-Type": "application/x-plist",
             "User-Agent": "py2shortcuts/0.1",
         },
         method="POST",
     )
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
-            compressed_shortcut = response.read()
+            shortcut = response.read()
     except HTTPError as error:
-        raise SigningError(f"Remote signing returned HTTP {error.code}") from error
+        raise SigningError(
+            f"Remote signing returned HTTP {error.code}, message: {error.msg}"
+        ) from error
     except URLError as error:
         raise SigningError("Remote signing request failed") from error
 
-    try:
-        shortcut = gzip.decompress(compressed_shortcut)
-    except gzip.BadGzipFile as error:
-        raise SigningError("Remote signing response was not a gzip archive") from error
     if not shortcut.startswith(b"AEA1"):
         raise SigningError("Remote signing response was not an AEA1 shortcut archive")
     return shortcut

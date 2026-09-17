@@ -6,7 +6,7 @@ from ._runtime import compile_only
 from .types import ShortcutContent
 
 
-def input() -> ShortcutContent:
+def shortcut_input() -> ShortcutContent:
     """Return the shortcut's incoming content (the ExtensionInput magic value)."""
     return compile_only()
 

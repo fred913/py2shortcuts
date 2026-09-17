@@ -1,6 +1,6 @@
 [project]
 name = "py2shortcuts"
-version = "0.5.0"
+version = "0.5.10"
 description = "A typed Python-to-Apple-Shortcuts compiler"
 readme = "README.md"
 authors = [{ name = "Sheng Fan", email = "git@sheng.fan" }]

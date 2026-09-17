@@ -4,9 +4,22 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 
 from . import ir
 from .errors import CompileError
+from .source_modules import (
+    ConstantBinding,
+    ExternalBinding,
+    FunctionBinding,
+    ModuleBinding,
+    SourceBinding,
+    SourceFunction,
+    SourceModule,
+    SourceModuleResolver,
+    StaticValue,
+)
 
 
 _BINOPS: dict[type[ast.operator], str] = {
@@ -34,49 +47,76 @@ _CMPOPS: dict[type[ast.cmpop], str] = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class _FunctionSpec:
+    name: str
+    node: ast.FunctionDef
+    module: SourceModule | None
+
+
 class PythonFrontend:
     """Lower a deliberately small Python subset into :mod:`py2shortcuts.ir`."""
 
-    def __init__(self, *, filename: str = "<string>") -> None:
+    def __init__(
+        self,
+        *,
+        filename: str = "<string>",
+        source_resolver: SourceModuleResolver | None = None,
+    ) -> None:
         self.filename = filename
-        self._functions: dict[str, ast.FunctionDef] = {}
+        self._source_resolver = source_resolver
+        self._functions: dict[str, _FunctionSpec] = {}
         self._aliases: dict[str, str] = {}
         self._inline_stack: list[str] = []
         self._locals: list[dict[str, ir.Expr]] = []
+        self._module_stack: list[SourceModule | None] = []
+        self._inline_counter = 0
+        self._temp_counter = 0
 
     def compile(self, source: str) -> ir.Module:
+        module: SourceModule | None = None
+        if self._source_resolver is not None and self.filename != "<string>":
+            module = self._source_resolver.load_entry(source, Path(self.filename))
+            tree = module.tree
+        else:
+            try:
+                tree = ast.parse(source, filename=self.filename)
+            except SyntaxError as error:
+                raise CompileError(
+                    error.msg,
+                    filename=self.filename,
+                    lineno=error.lineno,
+                    col_offset=(error.offset - 1) if error.offset else None,
+                ) from error
+
+        self._module_stack.append(module)
         try:
-            tree = ast.parse(source, filename=self.filename)
-        except SyntaxError as error:
-            raise CompileError(
-                error.msg,
-                filename=self.filename,
-                lineno=error.lineno,
-                col_offset=(error.offset - 1) if error.offset else None,
-            ) from error
+            for node in tree.body:
+                if isinstance(node, ast.FunctionDef):
+                    name = self._function_name(node.name, module)
+                    if name in self._functions:
+                        self._error(node, f"duplicate function definition {node.name!r}")
+                    self._functions[name] = _FunctionSpec(name, node, module)
+                elif isinstance(node, (ast.AsyncFunctionDef, ast.ClassDef)):
+                    self._error(node, f"{type(node).__name__} is not supported")
 
-        for node in tree.body:
-            if isinstance(node, ast.FunctionDef):
-                if node.name in self._functions:
-                    self._error(node, f"duplicate function definition {node.name!r}")
-                self._functions[node.name] = node
-            elif isinstance(node, (ast.AsyncFunctionDef, ast.ClassDef)):
-                self._error(node, f"{type(node).__name__} is not supported")
+            statements: list[ir.Stmt] = []
+            for node in tree.body:
+                if isinstance(node, ast.FunctionDef):
+                    self._validate_inline_function(node)
+                    continue
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    if module is None:
+                        self._record_legacy_import(node)
+                    continue
+                statement = self._stmt(node)
+                if statement is not None:
+                    statements.append(statement)
+            return ir.Module(tuple(statements))
+        finally:
+            self._module_stack.pop()
 
-        statements: list[ir.Stmt] = []
-        for node in tree.body:
-            if isinstance(node, ast.FunctionDef):
-                self._validate_inline_function(node)
-                continue
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                self._record_import(node)
-                continue
-            statement = self._stmt(node)
-            if statement is not None:
-                statements.append(statement)
-        return ir.Module(tuple(statements))
-
-    def _record_import(self, node: ast.Import | ast.ImportFrom) -> None:
+    def _record_legacy_import(self, node: ast.Import | ast.ImportFrom) -> None:
         # Imports are compile-time namespaces only. No runtime import action is emitted.
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -106,15 +146,19 @@ class PythonFrontend:
         args = node.args
         if args.posonlyargs or args.vararg or args.kwonlyargs or args.kwarg or args.defaults:
             self._error(node, "inline functions currently accept only required positional parameters")
+        body = self._function_body(node)
+        if not body or not isinstance(body[-1], ast.Return) or body[-1].value is None:
+            self._error(node, "user functions must end with `return <expression>`")
+        for statement in body[:-1]:
+            if any(isinstance(child, ast.Return) for child in ast.walk(statement)):
+                self._error(statement, "early return is not supported in inline functions yet")
+
+    @staticmethod
+    def _function_body(node: ast.FunctionDef) -> list[ast.stmt]:
         body = list(node.body)
-        if body and self._is_docstring(body[0]):
+        if body and PythonFrontend._is_docstring(body[0]):
             body.pop(0)
-        if len(body) != 1 or not isinstance(body[0], ast.Return) or body[0].value is None:
-            self._error(
-                node,
-                "user functions must currently be a single `return <expression>`; "
-                "use a backend plugin for more complex helpers",
-            )
+        return body
 
     @staticmethod
     def _is_docstring(node: ast.stmt) -> bool:
@@ -124,17 +168,20 @@ class PythonFrontend:
         if isinstance(node, ast.Expr):
             if self._is_docstring(node):
                 return None
+            append = self._append_stmt(node.value)
+            if append is not None:
+                return append
             return ir.ExprStmt(self._expr(node.value))
 
         if isinstance(node, ast.Assign):
             if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
                 self._error(node, "only assignment to one simple variable is supported")
-            return ir.Assign(node.targets[0].id, self._expr(node.value))
+            return ir.Assign(self._target_name(node.targets[0].id), self._expr(node.value))
 
         if isinstance(node, ast.AnnAssign):
             if not isinstance(node.target, ast.Name) or node.value is None:
                 self._error(node, "only initialized annotations on simple variables are supported")
-            return ir.Assign(node.target.id, self._expr(node.value))
+            return ir.Assign(self._target_name(node.target.id), self._expr(node.value))
 
         if isinstance(node, ast.AugAssign):
             if not isinstance(node.target, ast.Name):
@@ -142,7 +189,8 @@ class PythonFrontend:
             op = _BINOPS.get(type(node.op))
             if op is None:
                 self._error(node, f"unsupported augmented operator {type(node.op).__name__}")
-            return ir.Assign(node.target.id, ir.Binary(op, ir.Var(node.target.id), self._expr(node.value)))
+            target = self._target_name(node.target.id)
+            return ir.Assign(target, ir.Binary(op, ir.Var(target), self._expr(node.value)))
 
         if isinstance(node, ast.If):
             return ir.IfStmt(
@@ -156,14 +204,15 @@ class PythonFrontend:
                 self._error(node, "for ... else is not supported")
             if not isinstance(node.target, ast.Name):
                 self._error(node, "for-loop target must be one simple variable")
+            target = self._target_name(node.target.id)
             body = self._block(node.body)
             range_args = self._range_args(node.iter)
             if range_args is not None:
                 start, stop, step = range_args
                 if not isinstance(step, ir.Literal) or step.value != 1:
                     self._error(node, "range() currently requires step=1")
-                return ir.ForRangeStmt(node.target.id, start, stop, step, body)
-            return ir.ForEachStmt(node.target.id, self._expr(node.iter), body)
+                return ir.ForRangeStmt(target, start, stop, step, body)
+            return ir.ForEachStmt(target, self._expr(node.iter), body)
 
         if isinstance(node, ast.Pass):
             return None
@@ -182,7 +231,10 @@ class PythonFrontend:
             self._error(node, f"{type(node).__name__} is not supported")
 
         if isinstance(node, ast.Return):
-            self._error(node, "return is only valid inside a supported inline function")
+            self._error(node, "return is only valid as the final statement of a supported inline function")
+
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            self._error(node, "nested function/class definitions are not supported")
 
         self._error(node, f"unsupported statement: {type(node).__name__}")
 
@@ -207,6 +259,10 @@ class PythonFrontend:
         self._error(node, "range() expects 1 to 3 positional arguments")
 
     def _expr(self, node: ast.expr) -> ir.Expr:
+        static = self._try_static_eval(node)
+        if static is not _NO_STATIC:
+            return self._static_to_ir(static)
+
         if isinstance(node, ast.Constant):
             if node.value is Ellipsis or isinstance(node.value, (complex, bytes)):
                 self._error(node, f"unsupported constant {node.value!r}")
@@ -216,6 +272,16 @@ class PythonFrontend:
             for scope in reversed(self._locals):
                 if node.id in scope:
                     return scope[node.id]
+            binding = self._lookup_binding(node.id)
+            if isinstance(binding, ConstantBinding):
+                return self._static_to_ir(binding.value)
+            if isinstance(binding, ExternalBinding):
+                return ir.Symbol(binding.target)
+            if isinstance(binding, FunctionBinding):
+                self._register_source_function(binding.function)
+                return ir.Symbol(binding.function.qualified_name)
+            if isinstance(binding, ModuleBinding):
+                return ir.Symbol(binding.module.name)
             imported = self._aliases.get(node.id)
             if imported is not None:
                 return ir.Symbol(imported)
@@ -247,8 +313,9 @@ class PythonFrontend:
 
         if isinstance(node, ast.Call):
             target = self._call_target(node.func)
-            if target in self._functions:
-                return self._inline_function(target, node)
+            spec = self._functions.get(target)
+            if spec is not None:
+                return self._inline_function(spec, node)
             args = tuple(self._expr(value) for value in node.args)
             kwargs: list[tuple[str, ir.Expr]] = []
             for keyword in node.keywords:
@@ -290,72 +357,281 @@ class PythonFrontend:
         if isinstance(node, ast.IfExp):
             self._error(node, "conditional expressions are not supported yet; use an if statement")
 
-        if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.Lambda, ast.NamedExpr)):
+        if isinstance(node, ast.ListComp):
+            return self._list_comprehension(node)
+
+        if isinstance(node, (ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.Lambda, ast.NamedExpr)):
             self._error(node, f"{type(node).__name__} is not supported")
 
         self._error(node, f"unsupported expression: {type(node).__name__}")
 
-    def _inline_function(self, name: str, call: ast.Call) -> ir.Expr:
-        if call.keywords:
-            self._error(call, "inline function calls currently use positional arguments only")
-        if name in self._inline_stack:
-            self._error(call, f"recursive inline function {name!r} is not supported")
-        function = self._functions[name]
-        parameters = [argument.arg for argument in function.args.args]
-        if len(call.args) != len(parameters):
-            self._error(call, f"{name}() expects {len(parameters)} argument(s), got {len(call.args)}")
-        arguments = [self._expr(arg) for arg in call.args]
-        if not all(self._is_pure(argument) for argument in arguments):
-            self._error(
-                call,
-                f"arguments to inline function {name}() must currently be side-effect-free; "
-                "bind input()/plugin calls to variables first",
-            )
-        body = list(function.body)
-        if body and self._is_docstring(body[0]):
-            body.pop(0)
-        return_node = body[0]
-        assert isinstance(return_node, ast.Return) and return_node.value is not None
-        self._inline_stack.append(name)
-        self._locals.append(dict(zip(parameters, arguments, strict=True)))
+
+    def _append_stmt(self, node: ast.expr) -> ir.AppendStmt | None:
+        """Lower ``name.append(value)`` used as a statement.
+
+        Shortcuts has a native Add to Variable action.  Keeping append as an IR
+        statement makes list mutation explicit and also gives list-comprehension
+        lowering a small primitive to target.
+        """
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            return None
+        if node.func.attr != "append":
+            return None
+        if not isinstance(node.func.value, ast.Name):
+            self._error(node, "list.append() currently requires a simple list variable")
+        if len(node.args) != 1 or node.keywords:
+            self._error(node, "list.append() expects exactly one positional argument")
+        target = self._target_name(node.func.value.id)
+        return ir.AppendStmt(target, self._expr(node.args[0]))
+
+    def _list_comprehension(self, node: ast.ListComp) -> ir.BlockExpr:
+        """Desugar a simple list comprehension into list + loop + append IR.
+
+        ``[expr for x in values if cond]`` becomes conceptually::
+
+            __result = []
+            for __x in values:
+                if cond:
+                    __result.append(expr)
+
+        The target variable is scoped only while compiling the comprehension,
+        matching Python 3's non-leaking comprehension variable semantics.
+        """
+        if len(node.generators) != 1:
+            self._error(node, "list comprehensions currently support exactly one for-clause")
+        generator = node.generators[0]
+        if generator.is_async:
+            self._error(node, "async list comprehensions are not supported")
+        if not isinstance(generator.target, ast.Name):
+            self._error(generator.target, "list-comprehension target must be one simple variable")
+
+        iterable = self._expr(generator.iter)
+        self._temp_counter += 1
+        suffix = self._temp_counter
+        result_name = f"__py2s_listcomp_{suffix}_result"
+        item_name = f"__py2s_listcomp_{suffix}_item"
+
+        self._locals.append({generator.target.id: ir.Var(item_name)})
         try:
-            return self._expr(return_node.value)
+            value = self._expr(node.elt)
+            body: ir.Stmt = ir.AppendStmt(result_name, value)
+            for condition in reversed(generator.ifs):
+                body = ir.IfStmt(self._expr(condition), (body,), ())
         finally:
             self._locals.pop()
+
+        return ir.BlockExpr(
+            (
+                ir.Assign(result_name, ir.ListExpr(())),
+                ir.ForEachStmt(item_name, iterable, (body,)),
+            ),
+            ir.Var(result_name),
+        )
+
+    def _inline_function(self, spec: _FunctionSpec, call: ast.Call) -> ir.Expr:
+        if call.keywords:
+            self._error(call, "inline function calls currently use positional arguments only")
+        if spec.name in self._inline_stack:
+            self._error(call, f"recursive inline function {spec.name!r} is not supported")
+        function = spec.node
+        parameters = [argument.arg for argument in function.args.args]
+        if len(call.args) != len(parameters):
+            self._error(call, f"{function.name}() expects {len(parameters)} argument(s), got {len(call.args)}")
+
+        # Compile argument expressions in the caller's environment, then bind them
+        # once to mangled locals.  This preserves Python's call-by-value evaluation
+        # count even when a parameter is referenced many times in the inlined body.
+        arguments = [self._expr(arg) for arg in call.args]
+        self._inline_counter += 1
+        prefix = f"__py2s_{self._sanitize_name(spec.name)}_{self._inline_counter}_"
+        local_names = self._collect_function_locals(function)
+        scope = {name: ir.Var(prefix + name) for name in local_names}
+        bindings = [ir.Assign(scope[name].name, value) for name, value in zip(parameters, arguments, strict=True)]
+
+        body = self._function_body(function)
+        return_node = body[-1]
+        assert isinstance(return_node, ast.Return) and return_node.value is not None
+
+        self._inline_stack.append(spec.name)
+        self._module_stack.append(spec.module)
+        self._locals.append(scope)
+        try:
+            statements = list(self._block(body[:-1]))
+            result = self._expr(return_node.value)
+        finally:
+            self._locals.pop()
+            self._module_stack.pop()
             self._inline_stack.pop()
+        return ir.BlockExpr(tuple((*bindings, *statements)), result)
 
     @staticmethod
-    def _is_pure(expr: ir.Expr) -> bool:
-        if isinstance(expr, (ir.Literal, ir.Var)):
-            return True
-        if isinstance(expr, ir.Binary):
-            return PythonFrontend._is_pure(expr.left) and PythonFrontend._is_pure(expr.right)
-        if isinstance(expr, ir.Unary):
-            return PythonFrontend._is_pure(expr.operand)
-        if isinstance(expr, ir.Compare):
-            return PythonFrontend._is_pure(expr.left) and PythonFrontend._is_pure(expr.right)
-        if isinstance(expr, ir.BoolExpr):
-            return all(PythonFrontend._is_pure(value) for value in expr.values)
-        if isinstance(expr, ir.FormatString):
-            return all(isinstance(part, str) or PythonFrontend._is_pure(part) for part in expr.parts)
-        return False
+    def _collect_function_locals(function: ast.FunctionDef) -> set[str]:
+        names = {argument.arg for argument in function.args.args}
+
+        class Collector(ast.NodeVisitor):
+            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+                if node is function:
+                    for statement in node.body:
+                        self.visit(statement)
+                # Do not descend into nested functions.
+
+            def visit_Name(self, node: ast.Name) -> None:  # noqa: N802
+                if isinstance(node.ctx, ast.Store):
+                    names.add(node.id)
+
+        Collector().visit(function)
+        return names
+
+    def _target_name(self, name: str) -> str:
+        for scope in reversed(self._locals):
+            value = scope.get(name)
+            if isinstance(value, ir.Var):
+                return value.name
+        return name
+
+    def _lookup_binding(self, name: str) -> SourceBinding | None:
+        module = self._module_stack[-1] if self._module_stack else None
+        if module is None:
+            return None
+        return module.bindings.get(name)
 
     def _call_target(self, node: ast.expr) -> str:
-        parts: list[str] = []
-        current = node
+        if isinstance(node, ast.Name):
+            binding = self._lookup_binding(node.id)
+            if isinstance(binding, FunctionBinding):
+                self._register_source_function(binding.function)
+                return binding.function.qualified_name
+            if isinstance(binding, ExternalBinding):
+                return binding.target
+            imported = self._aliases.get(node.id)
+            if imported is not None:
+                return imported
+            # Entry-module function definitions are registered under a qualified
+            # name when source resolution is active.
+            module = self._module_stack[-1] if self._module_stack else None
+            if module is not None:
+                candidate = module.bindings.get(node.id)
+                if isinstance(candidate, FunctionBinding):
+                    self._register_source_function(candidate.function)
+                    return candidate.function.qualified_name
+            return node.id
+
+        if isinstance(node, ast.Attribute):
+            binding = self._resolve_attribute_binding(node)
+            if isinstance(binding, FunctionBinding):
+                self._register_source_function(binding.function)
+                return binding.function.qualified_name
+            if isinstance(binding, ExternalBinding):
+                return binding.target
+
+            parts: list[str] = []
+            current = node
+            while isinstance(current, ast.Attribute):
+                parts.append(current.attr)
+                current = current.value
+            if not isinstance(current, ast.Name):
+                self._error(node, "call target must be a name or dotted attribute")
+            root_binding = self._lookup_binding(current.id)
+            if isinstance(root_binding, ExternalBinding):
+                root = root_binding.target
+            else:
+                root = self._aliases.get(current.id, current.id)
+            parts.append(root)
+            return ".".join(reversed(parts))
+
+        self._error(node, "call target must be a name or dotted attribute")
+
+    def _resolve_attribute_binding(self, node: ast.Attribute) -> SourceBinding | None:
+        attrs: list[str] = []
+        current: ast.expr = node
         while isinstance(current, ast.Attribute):
-            parts.append(current.attr)
+            attrs.append(current.attr)
             current = current.value
         if not isinstance(current, ast.Name):
-            self._error(node, "call target must be a name or dotted attribute")
-        root = self._aliases.get(current.id, current.id)
-        parts.append(root)
-        return ".".join(reversed(parts))
+            return None
+        binding = self._lookup_binding(current.id)
+        for attr in reversed(attrs):
+            if isinstance(binding, ModuleBinding):
+                binding = binding.module.bindings.get(attr)
+            elif isinstance(binding, ExternalBinding):
+                binding = ExternalBinding(f"{binding.target}.{attr}")
+            else:
+                return None
+        return binding
+
+    def _register_source_function(self, function: SourceFunction) -> None:
+        self._functions.setdefault(
+            function.qualified_name,
+            _FunctionSpec(function.qualified_name, function.node, function.module),
+        )
+        self._validate_inline_function(function.node)
+
+    def _function_name(self, name: str, module: SourceModule | None) -> str:
+        if module is None:
+            return name
+        binding = module.bindings.get(name)
+        if isinstance(binding, FunctionBinding):
+            return binding.function.qualified_name
+        return f"{module.name}.{name}"
+
+    def _try_static_eval(self, node: ast.expr) -> StaticValue | object:
+        if isinstance(node, ast.Constant):
+            if node.value is None or isinstance(node.value, (str, int, float, bool)):
+                return node.value
+            return _NO_STATIC
+        if isinstance(node, ast.Name):
+            # Locals shadow compile-time constants.
+            if any(node.id in scope for scope in self._locals):
+                return _NO_STATIC
+            binding = self._lookup_binding(node.id)
+            if isinstance(binding, ConstantBinding):
+                return binding.value
+            return _NO_STATIC
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = self._try_static_eval(node.operand)
+            if value is _NO_STATIC or isinstance(value, (str, bool, type(None), list, tuple, dict)):
+                return _NO_STATIC
+            return +value if isinstance(node.op, ast.UAdd) else -value
+        if isinstance(node, ast.Subscript) and not isinstance(node.slice, ast.Slice):
+            container = self._try_static_eval(node.value)
+            key = self._try_static_eval(node.slice)
+            if container is _NO_STATIC or key is _NO_STATIC:
+                return _NO_STATIC
+            try:
+                if isinstance(container, (list, tuple)) and isinstance(key, int) and not isinstance(key, bool):
+                    return container[key]
+                if isinstance(container, dict) and key in container:
+                    return container[key]
+            except (IndexError, KeyError, TypeError):
+                return _NO_STATIC
+        if isinstance(node, ast.Attribute):
+            binding = self._resolve_attribute_binding(node)
+            if isinstance(binding, ConstantBinding):
+                return binding.value
+        return _NO_STATIC
+
+    def _static_to_ir(self, value: StaticValue) -> ir.Expr:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return ir.Literal(value)
+        if isinstance(value, (list, tuple)):
+            return ir.ListExpr(tuple(self._static_to_ir(item) for item in value))
+        if isinstance(value, dict):
+            return ir.DictExpr(tuple((self._static_to_ir(key), self._static_to_ir(item)) for key, item in value.items()))
+        raise TypeError(f"unsupported static value {value!r}")
+
+    @staticmethod
+    def _sanitize_name(name: str) -> str:
+        return "".join(character if character.isalnum() else "_" for character in name)
 
     def _error(self, node: ast.AST, message: str) -> None:
+        module = self._module_stack[-1] if self._module_stack else None
+        filename = str(module.path) if module is not None else self.filename
         raise CompileError(
             message,
-            filename=self.filename,
+            filename=filename,
             lineno=getattr(node, "lineno", None),
             col_offset=getattr(node, "col_offset", None),
         )
+
+
+_NO_STATIC = object()

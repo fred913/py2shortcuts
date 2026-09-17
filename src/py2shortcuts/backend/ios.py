@@ -92,7 +92,7 @@ def _literal_int(expression: ir.Expr | None, *, name: str) -> int:
 
 
 def _shortcut_input(backend: ShortcutsBackend, call: ir.Call) -> ValueRef:
-    _no_args(call, display="ios.shortcuts.input()")
+    _no_args(call, display="ios.shortcuts.shortcut_input()")
     backend.uses_shortcut_input = True
     return ValueRef.shortcut_input()
 
@@ -509,7 +509,7 @@ def register_ios_plugins(registry: PluginRegistry) -> None:
 
     registry.register_call("ios.app.health.log_sleep", _health_log_sleep)
 
-    registry.register_call("ios.shortcuts.input", _shortcut_input)
+    registry.register_call("ios.shortcuts.shortcut_input", _shortcut_input)
     registry.register_call("ios.content.coerce", _content_coerce)
     registry.register_call("ios.images.resize", _image_resize)
     registry.register_call("ios.images.convert", _image_convert)
