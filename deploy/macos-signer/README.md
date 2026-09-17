@@ -12,7 +12,14 @@ shortcuts --version
 shortcuts sign --mode anyone --input test.wflow --output test.shortcut
 ```
 
-The launchd plist is a template. Replace `__PYTHON__`, `__SERVER__`, `__TOKEN_FILE__`,
+Create a virtual environment and install the asynchronous server dependencies:
+
+```sh
+uv venv .venv --python 3.14
+uv pip install --python .venv/bin/python -r requirements.txt
+```
+
+The launchd plist is a template. Replace `__PYTHON__`, `__APP_DIR__`, `__TOKEN_FILE__`,
 and `__LOG_DIR__`, copy it to `~/Library/LaunchAgents/io.shengfan.py2shortcuts-signer.plist`,
 then load it:
 

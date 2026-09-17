@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.shengfan.py2shortcuts-signer</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON__</string>
+    <string>-m</string>
+    <string>uvicorn</string>
+    <string>server:app</string>
+    <string>--app-dir</string>
+    <string>__APP_DIR__</string>
+    <string>--host</string>
+    <string>192.168.110.7</string>
+    <string>--port</string>
+    <string>8765</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PY2SCSIGN_TOKEN_FILE</key>
+    <string>__TOKEN_FILE__</string>
+    <key>PY2SCSIGN_SHORTCUTS_PATH</key>
+    <string>/usr/bin/shortcuts</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/signer.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/signer.err.log</string>
+</dict>
+</plist>

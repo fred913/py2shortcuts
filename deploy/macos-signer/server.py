@@ -1,134 +1,165 @@
-#!/usr/bin/env python3
-"""Small authenticated HTTP wrapper around macOS `shortcuts sign`."""
+"""Authenticated asynchronous HTTP wrapper around macOS `shortcuts sign`."""
 
 from __future__ import annotations
 
-import argparse
+import asyncio
 import hmac
+import os
 import plistlib
-import subprocess
+import shutil
 import tempfile
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-MAX_REQUEST_BYTES = 1024 * 1024
+from fastapi import FastAPI, Header, HTTPException, Request, Response, status
+
+MAX_REQUEST_BYTES = 64 * 1024 * 1024
+SIGN_TIMEOUT_SECONDS = 180
+TOKEN_FILE = Path(os.environ["PY2SCSIGN_TOKEN_FILE"])
+SHORTCUTS_PATH = os.environ.get("PY2SCSIGN_SHORTCUTS_PATH", "/usr/bin/shortcuts")
+API_TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip()
+
+if not API_TOKEN:
+    raise RuntimeError("Signing token file is empty")
+
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+signing_slots = asyncio.Semaphore(1)
 
 
-class SigningServer(ThreadingHTTPServer):
-    api_token: str
-    shortcuts_path: str
-
-
-class Handler(BaseHTTPRequestHandler):
-    server: SigningServer
-
-    def do_GET(self) -> None:
-        if self.path != "/health":
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        result = subprocess.run(
-            [self.server.shortcuts_path, "help", "sign"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
+async def run_command(*arguments: str) -> tuple[int, bytes, bytes]:
+    process = await asyncio.create_subprocess_exec(
+        *arguments,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(), timeout=SIGN_TIMEOUT_SECONDS
         )
-        if result.returncode != 0:
-            self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "shortcuts CLI unavailable")
-            return
-        body = b"ok\n"
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="shortcuts sign timed out",
+        ) from None
+    return process.returncode, stdout, stderr
 
-    def do_POST(self) -> None:
-        if self.path != "/v1/sign":
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        expected = f"Bearer {self.server.api_token}"
-        supplied = self.headers.get("Authorization", "")
-        if not hmac.compare_digest(supplied, expected):
-            self.send_error(HTTPStatus.UNAUTHORIZED)
-            return
+
+async def read_request_body(request: Request) -> bytes:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
         try:
-            length = int(self.headers.get("Content-Length", ""))
+            declared_length = int(content_length)
         except ValueError:
-            self.send_error(HTTPStatus.BAD_REQUEST, "invalid Content-Length")
-            return
-        if length <= 0 or length > MAX_REQUEST_BYTES:
-            self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
-            return
-        workflow = self.rfile.read(length)
-        try:
-            parsed = plistlib.loads(workflow)
-        except plistlib.InvalidFileException:
-            self.send_error(HTTPStatus.BAD_REQUEST, "invalid plist")
-            return
-        if not isinstance(parsed, dict) or not isinstance(parsed.get("WFWorkflowActions"), list):
-            self.send_error(HTTPStatus.BAD_REQUEST, "not a Shortcuts workflow")
-            return
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid Content-Length",
+            ) from None
+        if declared_length <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="empty request body",
+            )
+        if declared_length > MAX_REQUEST_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="workflow exceeds 64 MiB",
+            )
 
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_REQUEST_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="workflow exceeds 64 MiB",
+            )
+        chunks.append(chunk)
+    if total == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="empty request body",
+        )
+    return await asyncio.to_thread(b"".join, chunks)
+
+
+def compile_binary_workflow(workflow: bytes) -> bytes:
+    try:
+        parsed = plistlib.loads(workflow)
+    except plistlib.InvalidFileException:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid plist",
+        ) from None
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("WFWorkflowActions"), list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="not a Shortcuts workflow",
+        )
+    return plistlib.dumps(parsed, fmt=plistlib.FMT_BINARY, sort_keys=False)
+
+
+@app.get("/health", response_class=Response)
+async def health() -> Response:
+    returncode, _, _ = await run_command(SHORTCUTS_PATH, "help", "sign")
+    if returncode != 0:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="shortcuts CLI unavailable",
+        )
+    return Response(content=b"ok\n", media_type="text/plain")
+
+
+@app.post("/v1/sign", response_class=Response)
+async def sign_workflow(
+    request: Request,
+    authorization: str = Header(default=""),
+) -> Response:
+    expected = f"Bearer {API_TOKEN}"
+    if not hmac.compare_digest(authorization, expected):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+
+    workflow = await read_request_body(request)
+    binary_workflow = await asyncio.to_thread(compile_binary_workflow, workflow)
+
+    async with signing_slots:
+        directory = Path(
+            await asyncio.to_thread(tempfile.mkdtemp, prefix="py2shortcuts-sign-")
+        )
         try:
-            with tempfile.TemporaryDirectory(prefix="py2shortcuts-sign-") as directory:
-                input_path = Path(directory, "input.wflow")
-                output_path = Path(directory, "output.shortcut")
-                input_path.write_bytes(workflow)
-                result = subprocess.run(
-                    [
-                        self.server.shortcuts_path,
-                        "sign",
-                        "--mode",
-                        "anyone",
-                        "--input",
-                        str(input_path),
-                        "--output",
-                        str(output_path),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    check=False,
+            input_path = directory / "input.wflow"
+            output_path = directory / "output.shortcut"
+            await asyncio.to_thread(input_path.write_bytes, binary_workflow)
+            returncode, _, stderr = await run_command(
+                SHORTCUTS_PATH,
+                "sign",
+                "--mode",
+                "anyone",
+                "--input",
+                str(input_path),
+                "--output",
+                str(output_path),
+            )
+            if returncode != 0:
+                message = stderr.decode("utf-8", errors="replace").strip()
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"shortcuts sign failed: {message}",
                 )
-                if result.returncode != 0:
-                    self.log_error("shortcuts sign failed: %s", result.stderr.strip())
-                    self.send_error(HTTPStatus.BAD_GATEWAY, "shortcuts sign failed")
-                    return
-                signed = output_path.read_bytes()
-        except (OSError, subprocess.TimeoutExpired) as error:
-            self.log_error("signing failed: %s", error)
-            self.send_error(HTTPStatus.BAD_GATEWAY, "signing failed")
-            return
-        if not signed.startswith(b"AEA1"):
-            self.send_error(HTTPStatus.BAD_GATEWAY, "invalid signed output")
-            return
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("Content-Length", str(len(signed)))
-        self.end_headers()
-        self.wfile.write(signed)
+            try:
+                signed = await asyncio.to_thread(output_path.read_bytes)
+            except FileNotFoundError:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="shortcuts sign did not create an output file",
+                ) from None
+        finally:
+            await asyncio.to_thread(shutil.rmtree, directory, True)
 
-    def log_message(self, format: str, *args: object) -> None:
-        print(f"{self.address_string()} - {format % args}", flush=True)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--shortcuts", default="/usr/bin/shortcuts")
-    parser.add_argument("--token-file", type=Path, required=True)
-    args = parser.parse_args()
-    token = args.token_file.read_text(encoding="utf-8").strip()
-    if not token:
-        raise SystemExit("Signing token file is empty")
-    server = SigningServer((args.host, args.port), Handler)
-    server.api_token = token
-    server.shortcuts_path = args.shortcuts
-    server.serve_forever()
-
-
-if __name__ == "__main__":
-    main()
+    if not signed.startswith(b"AEA1"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="invalid signed output",
+        )
+    return Response(content=signed, media_type="application/octet-stream")
